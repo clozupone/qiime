@@ -305,8 +305,40 @@ def main():
             #open and parse the biom table fp
             otu_table = parse_biom_table(open(otu_table_fp, 'U'))
 
+            #synchronize the mapping file with the otu table
+            category_mapping, removed_samples = \
+                sync_mapping_to_otu_table(otu_table, category_mapping)
+            if removed_samples:
+                print "Warning, the following samples were in the category mapping file " +\
+                                    "but not the OTU table and will be ignored: "
+                for i in removed_samples:
+                        print i + '\n'
+
             # run the statistical test
-            output = test_wrapper(test, otu_table, category_mapping, 
+            if test == 'longitudinal_correlation' or test == 'paired_T':
+                converted_otu_table = longitudinal_otu_table_conversion_wrapper(otu_table, 
+                    category_mapping, individual_column, reference_sample_column)
+                #save the converted table
+                if conv_output_fp:
+                    of = open(conv_output_fp, 'w')
+                    of.write(format_biom_table(converted_otu_table))
+                    of.close()
+                if test == 'longitudinal_correlation':
+                    #set the otu_include list to all of the OTUs, this effectively
+                    #deactivates the filter for correlation, because the filtered OTU_list is
+                    #rewritten with the otu_include list in the test_wrapper
+                    if not otu_include:
+                        otu_include = set(otu_table.ObservationIds)
+                    output = test_wrapper('correlation', converted_otu_table, 
+                        category_mapping, category, threshold, filter, otu_include, 
+                        999999999.0, True)
+                elif test == 'paired_T':
+                    output = test_wrapper('paired_T', converted_otu_table, 
+                        category_mapping, category, threshold, 
+                        filter, otu_include, 999999999.0, True, 
+                        individual_column, reference_sample_column)
+            else:
+                output = test_wrapper(test, otu_table, category_mapping, 
                             category, threshold, filter, otu_include, 
                             otu_table_relative_abundance=relative_abundance)
             
@@ -350,29 +382,9 @@ def main():
                 output_fp_sweep = "%s_%s_%s.txt" % \
                     (output_basename,test,category)
 
-                # if the convert_otu_table_fp is passed, save the converted table
+                # cannot run on longitudinal options of paired_T
                 if test == 'longitudinal_correlation' or test == 'paired_T':
-                    converted_otu_table = longitudinal_otu_table_conversion_wrapper(table, 
-                        category_mapping, individual_column, reference_sample_column)
-                    if conv_output_fp:
-                        of = open(conv_output_fp, 'w')
-                        of.write(format_biom_table(converted_otu_table))
-                        of.close()
-                    if test == 'longitudinal_correlation':
-                        #set the otu_include list to all of the OTUs, this effectively
-                        #deactivates the filter for correlation, because the filtered OTU_list is
-                        #rewritten with the otu_include list in the test_wrapper
-                        if not otu_include:
-                            otu_include = set(otu_table.ObservationIds)
-                        output = test_wrapper('correlation', converted_otu_table, 
-                            category_mapping, category, threshold, filter, otu_include, 
-                            999999999.0, True)
-                    elif test == 'paired_T':
-                        output = test_wrapper('paired_T', converted_otu_table, 
-                            category_mapping, category, threshold, 
-                            filter, otu_include, 999999999.0, True, 
-                            individual_column, reference_sample_column)
-
+                    raise ValueError("the longitudinal_correlation and paired_T options cannot be run on a directory")
                 # run test single input table from the directory  
                 else:
                     output = test_wrapper(test, otu_table, category_mapping, 
